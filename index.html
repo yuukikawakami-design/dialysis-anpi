@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>安否確認</title>
+  <!--
+    透析室 災害対応：LINE の中で開く回答画面（LIFF）
+    このファイルを GitHub Pages などに置き、その URL を LIFF アプリの「エンドポイントURL」にする。
+    下の CONFIG の 2 つを書き換えてから置くこと。
+  -->
+  <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    :root {
+      --accent: #0b57d0; --accent-bg: #e8f0fe;
+      --text: #1f1f1f; --muted: #5f6368; --line: #dadce0; --bg: #f6f8fb; --card: #fff;
+      --red: #b3261e; --red-bg: #fce8e6;
+      --green: #137333; --green-bg: #e6f4ea;
+      --orange: #b06000; --orange-bg: #fef7e0;
+      --gray: #5f6368; --gray-bg: #f1f3f4;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; color: var(--text); background: var(--bg); font-size: 17px; line-height: 1.6; -webkit-text-size-adjust: 100%; }
+    header { background: var(--accent); color: #fff; padding: 12px 16px; font-weight: bold; font-size: 18px; }
+    header small { display: block; font-weight: normal; font-size: 13px; opacity: .9; }
+    main { max-width: 640px; margin: 0 auto; padding: 16px 16px 40px; }
+    [hidden] { display: none !important; }
+    h1 { font-size: 21px; margin: 4px 0 10px; }
+    p { margin: 0 0 12px; }
+    .muted { color: var(--muted); font-size: 14px; }
+    .center { text-align: center; }
+    .loading { text-align: center; color: var(--muted); padding: 60px 0; }
+
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px 16px; margin-bottom: 12px; }
+    .who { font-size: 24px; font-weight: bold; margin: 6px 0; }
+    .pill { display: inline-block; font-size: 13px; font-weight: bold; padding: 2px 10px; border-radius: 999px; background: var(--accent-bg); color: var(--accent); }
+
+    .status { border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; background: var(--c-bg); border: 2px solid var(--c); }
+    .status b { color: var(--c); font-size: 18px; }
+    .status p { margin: 2px 0 0; font-size: 15px; }
+    .status .notice { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--c); white-space: pre-wrap; }
+    .c-gray { --c: var(--gray); --c-bg: var(--gray-bg); }
+    .c-green { --c: var(--green); --c-bg: var(--green-bg); }
+    .c-orange { --c: var(--orange); --c-bg: var(--orange-bg); }
+    .c-red { --c: var(--red); --c-bg: var(--red-bg); }
+
+    .q { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+    .q.missing { border: 2px solid var(--red); background: #fffafa; }
+    .q h2 { margin: 0 0 6px; font-size: 17px; }
+    .q h2 em { font-style: normal; font-size: 12px; color: #fff; background: var(--red); border-radius: 4px; padding: 1px 6px; margin-left: 8px; vertical-align: 2px; }
+    .hint { margin: -2px 0 8px; color: var(--muted); font-size: 14px; }
+    .opts { display: grid; gap: 8px; }
+    .opts.cols2 { grid-template-columns: 1fr 1fr; }
+    .opts.cols3 { grid-template-columns: 1fr 1fr 1fr; }
+    .opt { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 2px solid var(--line); border-radius: 10px; cursor: pointer; min-height: 52px; background: #fff; }
+    .opt input { width: 22px; height: 22px; margin: 0; flex: none; accent-color: var(--accent); }
+    .opt.on { border-color: var(--accent); background: var(--accent-bg); font-weight: bold; }
+    input[type=text], input[type=tel], textarea { display: block; width: 100%; margin-top: 8px; padding: 12px; font: inherit; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); }
+
+    .btn { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 56px; margin-top: 10px; font: inherit; font-size: 18px; padding: 10px 16px; border-radius: 12px; border: 1px solid var(--line); background: #fff; color: var(--text); cursor: pointer; text-decoration: none; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: bold; }
+    .btn.line { background: #06c755; border-color: #06c755; color: #fff; font-weight: bold; }
+    .btn.small { min-height: 44px; font-size: 15px; }
+    .btn:disabled { opacity: .6; }
+    .msg { margin: 8px 0; padding: 12px 14px; border-radius: 10px; background: var(--orange-bg); border: 1px solid #f9d97b; font-size: 15px; }
+    .msg.error { background: var(--red-bg); border-color: #f4b4ae; color: var(--red); font-weight: bold; }
+    .mark { width: 64px; height: 64px; margin: 0 auto 8px; border-radius: 50%; background: var(--green); color: #fff; font-size: 38px; line-height: 64px; text-align: center; }
+    .flag { margin: 14px 0 6px; padding: 12px; border-radius: 10px; background: var(--orange-bg); color: var(--orange); font-weight: bold; }
+    .foot { margin: 20px 0 0; color: var(--muted); font-size: 14px; }
+    .foot a { color: var(--accent); font-weight: bold; }
+  </style>
+</head>
+<body>
+<header id="hd">安否確認<small id="org"></small></header>
+<main id="app"><p class="loading">LINE を確認しています…</p></main>
+
+<script>
+  // ▼▼▼ ここの 2 つを書き換える ▼▼▼
+  var CONFIG = {
+    LIFF_ID: '2012762055-4vTbztDm',                       // 例：2000000000-abcdEFGH
+    API_URL: 'https://script.google.com/macros/s/AKfycbwYTDSW_OGjolfIZ5kVFecHlmmMeY_C20B5fszq-Bx5vRp8h99v7c9pjPOcC_JJFYbq/exec'                 // 例：https://script.google.com/macros/s/xxxx/exec
+  };
+  // ▲▲▲ ここまで ▲▲▲
+
+  var D = null;        // サーバーからの whoami の結果
+  var idToken = '';
+  var inviteToken = '';  // 読み取った登録QR のトークン
+  var app = document.getElementById('app');
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function telLink(num) { return 'tel:' + String(num).replace(/[^0-9+]/g, ''); }
+  function view(html) { app.innerHTML = html; window.scrollTo(0, 0); }
+
+  function api(action, extra) {
+    var body = { action: action, idToken: idToken };
+    for (var k in extra) body[k] = extra[k];
+    // Content-Type を付けない（text/plain）ことで、Apps Script にそのまま送れる
+    return fetch(CONFIG.API_URL, { method: 'POST', body: JSON.stringify(body) }).then(function (res) {
+      if (!res.ok) throw new Error('通信エラー（' + res.status + '）');
+      return res.json();
+    });
+  }
+
+  function fatal(text, relogin) {
+    view('<div class="card"><h1>開けませんでした</h1><p>' + esc(text) + '</p>'
+      + '<button class="btn primary" id="retry">もう一度ためす</button></div>' + footer());
+    document.getElementById('retry').onclick = function () {
+      if (relogin && liff.isLoggedIn()) liff.logout();
+      location.reload();
+    };
+  }
+
+  function footer() {
+    var phone = D && D.status && D.status.phone;
+    return '<p class="foot">具合が悪いとき・急ぐときは、迷わず <a href="tel:119">119 番</a>'
+      + (phone ? ' または 透析室（<a href="' + esc(telLink(phone)) + '">' + esc(phone) + '</a>）' : '')
+      + ' に電話してください。</p>';
+  }
+
+  function statusBox() {
+    var s = D.status;
+    return '<div class="status c-' + esc(s.color) + '"><b>透析：' + esc(s.status) + '</b>'
+      + (s.updated ? ' <span class="muted">' + esc(s.updated) + '</span>' : '')
+      + '<p>' + esc(s.text) + '</p>'
+      + (s.notice ? '<p class="notice">' + esc(s.notice) + '</p>' : '') + '</div>';
+  }
+
+  // ───────── 起動 ─────────
+  function start() {
+    if (/ここに/.test(CONFIG.LIFF_ID + CONFIG.API_URL)) {
+      return fatal('設定がまだです（index.html の CONFIG に LIFF ID と URL を入れてください）。');
+    }
+    liff.init({ liffId: CONFIG.LIFF_ID }).then(function () {
+      if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+      idToken = liff.getIDToken() || '';
+      if (!idToken) return fatal('LINE の本人確認ができませんでした（LIFF の設定で openid を有効にしてください）。');
+      // liff.init のあとで読む（LINE から開くと、最初は liff.state に入っているため）
+      var t = new URLSearchParams(location.search).get('t') || '';
+      inviteToken = t;
+      return api('whoami', { t: t }).then(function (r) {
+        if (!r.ok) return fatal(r.error, r.relogin);
+        D = r;
+        document.getElementById('org').textContent = r.status.org || '';
+        if (t) {
+          // 登録QR は 1 回だけ。再読み込みで同じ画面に戻らないよう URL から消す
+          history.replaceState(null, '', location.pathname);
+          return showInvite(r.invite);
+        }
+        showHome();
+      });
+    }).catch(function (e) {
+      fatal('読み込めませんでした。電波のよい場所で、もう一度開いてください。（' + (e && e.message || e) + '）');
+    });
+  }
+
+  // ───────── 登録（登録QR を読み取ったとき） ─────────
+  function showInvite(inv) {
+    if (!inv || inv.error) {
+      view('<div class="card"><h1>登録できません</h1><p>' + esc(inv ? inv.error : '') + '</p>'
+        + '<button class="btn" id="home">戻る</button></div>' + footer());
+      document.getElementById('home').onclick = showHome;
+      return;
+    }
+    if (inv.already) return registered(true, inv.name);
+    var rel = inv.relation === '家族' ? 'ご家族' : 'ご本人';
+    view('<div class="card center"><span class="pill">' + esc(inv.kind === '職員' ? '職員' : '患者') + '・' + esc(rel) + '</span>'
+      + '<div class="who">' + esc(inv.name) + ' ' + (inv.kind === '職員' ? 'さん' : '様') + '</div>'
+      + '<p>この LINE' + (D.lineName ? '（' + esc(D.lineName) + '）' : '') + 'を、'
+      + (inv.relation === '家族' ? 'ご家族の連絡先' : 'ご本人の連絡先') + 'として登録します。</p>'
+      + '<p class="muted">災害のとき、名前を入れなくても安否を答えられるようになります。</p>'
+      + '<p id="msg" class="msg error" hidden></p>'
+      + '<button class="btn primary" id="reg">登録する</button>'
+      + '<button class="btn small" id="cancel">やめる</button></div>');
+    document.getElementById('cancel').onclick = function () { liff.closeWindow(); };
+    document.getElementById('reg').onclick = function () {
+      var b = this;
+      b.disabled = true;
+      b.textContent = '登録しています…';
+      api('register', { t: inviteToken }).then(function (r) {
+        if (!r.ok) {
+          b.disabled = false;
+          b.textContent = '登録する';
+          var m = document.getElementById('msg');
+          m.textContent = r.error;
+          m.hidden = false;
+          return;
+        }
+        D.people = r.people;
+        registered(r.already, inv.name);
+      }).catch(function (e) {
+        b.disabled = false;
+        b.textContent = '登録する';
+        var m = document.getElementById('msg');
+        m.textContent = '送れませんでした。電波のよい場所でもう一度押してください。';
+        m.hidden = false;
+      });
+    };
+  }
+
+  function registered(already, name) {
+    view('<div class="card center"><div class="mark">✓</div>'
+      + '<h1>' + (already ? '登録済みです' : '登録できました') + '</h1>'
+      + '<p><b>' + esc(name) + '</b></p>'
+      + '<p>災害のときは、LINE のトーク画面の下にあるメニュー<br><b>「安否を回答」</b>を押してください。<br>名前を入れなくても答えられます。</p>'
+      + '<div id="friend"></div>'
+      + '<button class="btn" id="close">閉じる</button></div>');
+    document.getElementById('close').onclick = function () { liff.closeWindow(); };
+    // 友だちになっていないと一斉配信が届かないので、追加をすすめる
+    if (D.friendUrl && liff.getFriendship) {
+      liff.getFriendship().then(function (f) {
+        if (f && f.friendFlag) return;
+        document.getElementById('friend').innerHTML =
+          '<p class="flag">お知らせを受け取るため、友だち追加をしてください。</p>'
+          + '<a class="btn line" href="' + esc(D.friendUrl) + '">友だち追加する</a>';
+      }).catch(function () { /* 確認できなくても続ける */ });
+    }
+  }
+
+  // ───────── ホーム ─────────
+  function showHome() {
+    var people = D.people || [];
+    if (!people.length) {
+      view(statusBox()
+        + '<div class="card"><h1>まだ登録されていません</h1>'
+        + '<p>透析室でお渡しした<b>「登録QR」</b>を、スマホのカメラで読み取ってください。</p>'
+        + '<p class="muted">カードがないとき・LINE で答えられないときは、下のボタンか電話で答えてください。</p>'
+        + '<a class="btn" href="' + esc(D.status.statusUrl.replace('?p=status', '?p=patient')) + '">登録コードで回答する</a>'
+        + '</div>' + footer());
+      return;
+    }
+    if (people.length === 1 && !D.dashUrl) return showForm(people[0]);
+    view(statusBox()
+      + '<div class="card"><h1>だれの安否を答えますか</h1>'
+      + people.map(function (p, i) {
+        return '<button class="btn primary" data-i="' + i + '">' + esc(p.name) + ' ' + (p.kind === '職員' ? 'さん（職員）' : '様')
+          + (p.relation === '家族' ? '（ご家族として）' : '') + '</button>';
+      }).join('')
+      + (D.dashUrl ? '<button class="btn" id="dash">ダッシュボードを開く（職員）</button>' : '')
+      + '</div>' + footer());
+    var bs = app.querySelectorAll('button[data-i]');
+    for (var i = 0; i < bs.length; i++) bs[i].onclick = function () { showForm(people[Number(this.getAttribute('data-i'))]); };
+    if (D.dashUrl) document.getElementById('dash').onclick = function () {
+      // Google のログインが要るので、LINE の外のブラウザで開く
+      liff.openWindow({ url: D.dashUrl, external: true });
+    };
+  }
+
+  // ───────── 回答フォーム ─────────
+  function radios(name, options, checked) {
+    return options.map(function (o) {
+      return '<label class="opt"><input type="radio" name="' + esc(name) + '" value="' + esc(o) + '"'
+        + (o === checked ? ' checked' : '') + '><span>' + esc(o) + '</span></label>';
+    }).join('');
+  }
+  function q(title, body, req, hint, extra) {
+    return '<section class="q"' + (req ? ' data-req="' + req + '"' : '') + (extra || '') + '><h2>' + esc(title) + (req ? '<em>必須</em>' : '') + '</h2>'
+      + (hint ? '<p class="hint">' + esc(hint) + '</p>' : '') + body + '</section>';
+  }
+
+  function showForm(person) {
+    var O = D.opt;
+    var isStaff = person.kind === '職員';
+    var flood = D.status.hazard === '水害' && O.evac;   // 水害のときだけ浸水・避難の質問を出す
+    var head = '<div class="card center" style="padding:12px 16px"><span class="pill">' + (isStaff ? '職員' : (person.relation === '家族' ? 'ご家族が回答' : 'ご本人')) + '</span>'
+      + '<div class="who">' + esc(person.name) + ' ' + (isStaff ? 'さん' : '様') + '</div></div>';
+    var body = isStaff
+      ? q('あなたのけが', '<div class="opts cols2">' + radios('injury', O.injury) + '</div>', 'injury')
+        + q('家族・自宅の状況', '<div class="opts cols2">' + radios('family', O.family) + '</div>', 'family')
+        + q('病院に参集できますか', '<div class="opts">' + radios('attend', O.attend) + '</div>', 'attend')
+        + (flood ? q('病院までの道', '<div class="opts">' + radios('route', O.route) + '</div>', '', '冠水した道には入らないでください') : '')
+        + q('到着までの見込み', '<div class="opts cols2">' + radios('eta', O.eta) + '</div>', 'eta', 'いまから病院に着くまで、どのくらいかかりそうですか', ' id="etaSec" hidden')
+        + q('いまいる場所', '<input type="text" name="place" maxlength="100" placeholder="自宅、〇〇小学校 など">')
+        + q('連絡事項', '<textarea name="note" rows="3" maxlength="500" placeholder="道路の状況、参集の条件 など"></textarea>')
+      : q('回答している人', '<div class="opts cols3">' + radios('respondent', O.respondent, person.relation === '家族' ? '家族' : '本人') + '</div>')
+        + (flood ? q('避難の状況', '<div class="opts">' + radios('evac', O.evac) + '</div>', 'evac', '取り残されて危ないときは、すぐ 119 番にも電話してください')
+          + q('自宅の浸水', '<div class="opts">' + radios('flood', O.flood) + '</div>') : '')
+        + q('けがはありますか', '<div class="opts">' + radios('injury', O.injury) + '</div>', 'injury')
+        + q('透析に来る手段はありますか', '<div class="opts">' + radios('transport', O.transport) + '</div>', 'transport', '車・送迎・徒歩など、病院まで来られるかどうか')
+        + q('いまいる場所', '<div class="opts cols2">' + radios('place', O.place) + '</div><input type="text" name="placeDetail" maxlength="100" placeholder="避難所の名前など（わかれば）">')
+        + q('最後に透析を受けた日', '<div class="opts cols2">' + radios('lastDialysis', O.lastDialysis) + '</div>')
+        + q('病院からの電話はほしいですか', '<div class="opts">' + radios('call', O.call) + '</div><input type="tel" name="phone" maxlength="30" placeholder="いまつながる電話番号（空欄なら登録の番号）">', 'call')
+        + q('体調で気になること・伝えたいこと', '<textarea name="note" rows="3" maxlength="500" placeholder="息苦しい、むくみがある、薬が足りない など"></textarea>');
+
+    view((isStaff ? '' : statusBox()) + head
+      + '<form id="f" novalidate autocomplete="off">' + body
+      + '<p id="msg" class="msg" hidden></p><button type="submit" class="btn primary" id="send">送信する</button></form>'
+      + ((D.people.length > 1 || D.dashUrl) ? '<button class="btn small" id="back">戻る</button>' : '')
+      + footer());
+
+    var form = document.getElementById('f');
+    var msg = document.getElementById('msg');
+    var send = document.getElementById('send');
+    function paint() {
+      var ls = form.querySelectorAll('.opt');
+      for (var i = 0; i < ls.length; i++) ls[i].classList.toggle('on', ls[i].querySelector('input').checked);
+      var eta = document.getElementById('etaSec');
+      if (eta) eta.hidden = form.elements.attend.value !== '参集できる';
+    }
+    form.addEventListener('change', paint);
+    paint();
+    var back = document.getElementById('back');
+    if (back) back.onclick = showHome;
+
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var first = null;
+      var secs = form.querySelectorAll('[data-req]');
+      for (var i = 0; i < secs.length; i++) {
+        var sec = secs[i];
+        if (sec.hidden) { sec.classList.remove('missing'); continue; }
+        var el = form.elements[sec.getAttribute('data-req')];
+        var bad = !el || !String(el.value || '').trim();
+        sec.classList.toggle('missing', bad);
+        if (bad && !first) first = sec;
+      }
+      if (first) {
+        msg.textContent = '赤い枠の項目を選んでください。';
+        msg.className = 'msg error';
+        msg.hidden = false;
+        first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      var data = {};
+      new FormData(form).forEach(function (v, k) { data[k] = v; });
+      send.disabled = true;
+      send.textContent = '送信しています…';
+      msg.hidden = true;
+      var slow = setTimeout(function () {
+        msg.textContent = '通信に時間がかかっています。このままお待ちください。';
+        msg.className = 'msg';
+        msg.hidden = false;
+      }, 15000);
+      api('answer', { person: person.key, data: data }).then(function (r) {
+        clearTimeout(slow);
+        if (!r.ok) {
+          send.disabled = false;
+          send.textContent = '送信する';
+          msg.textContent = r.error;
+          msg.className = 'msg error';
+          msg.hidden = false;
+          return;
+        }
+        done(person, r);
+      }).catch(function () {
+        clearTimeout(slow);
+        send.disabled = false;
+        send.textContent = '送信する';
+        msg.textContent = '送れませんでした。電波のよい場所で、もう一度「送信する」を押してください。';
+        msg.className = 'msg error';
+        msg.hidden = false;
+      });
+    });
+  }
+
+  function done(person, r) {
+    var isStaff = person.kind === '職員';
+    view('<div class="card center"><div class="mark">✓</div><h1>回答を受け付けました</h1>'
+      + '<p>' + esc(person.name) + ' ' + (isStaff ? 'さん' : '様') + '・' + esc(r.time) + '</p>'
+      + (r.arrive ? '<p>到着見込み：' + esc(r.arrive) + ' ごろ</p>' : '')
+      + (r.flags.indexOf('救助が必要') >= 0 ? '<p class="flag" style="background:var(--red-bg);color:var(--red)">危ないときは、すぐ <a href="tel:119">119 番</a> に電話してください。<br>透析室からも連絡します。</p>' : '')
+      + (r.flags.length ? '<p class="flag">' + (isStaff ? 'けがの報告を担当者に知らせました。手当てを優先してください。'
+        : '担当者から連絡します。電話に出られるようにしておいてください。') + '</p>' : '')
+      + (isStaff ? '' : '<button class="btn primary" id="status">透析の状況を見る</button>')
+      + '<button class="btn" id="again">回答を直す・もう一度送る</button>'
+      + (D.people.length > 1 ? '<button class="btn" id="others">ほかの人の回答をする</button>' : '')
+      + '<button class="btn small" id="close">閉じる</button></div>' + footer());
+    var s = document.getElementById('status');
+    if (s) s.onclick = function () { liff.openWindow({ url: D.status.statusUrl, external: false }); };
+    document.getElementById('again').onclick = function () { showForm(person); };
+    var o = document.getElementById('others');
+    if (o) o.onclick = showHome;
+    document.getElementById('close').onclick = function () { liff.closeWindow(); };
+  }
+
+  start();
+</script>
+</body>
+</html>
